@@ -4,9 +4,9 @@
 	import { fromStore } from 'svelte/store';
 	import { getPhrases } from '../../services/phrases';
 	import type { Phrase } from '../../types/phrase';
+	import { areAlike } from '../../helpers/stringHelpers';
 
 	let numberOfWords = 0;
-	let started = false;
 	let maxNumberOfWords = 0;
 	let mode = 'flipCards' as 'flipCards' | 'typeWords';
 	let direction = 'primaryToSecondary' as 'primaryToSecondary' | 'secondaryToPrimary';
@@ -17,8 +17,8 @@
 	let translation = '';
 	let correctAnswers = 0;
 	let wrongAnswers = 0;
-	let showStepResult = false;
 	let translationInput = undefined as undefined | HTMLInputElement;
+	let currentScreen = 'start' as 'start' | 'flips' | 'type' | 'typePhraseResult' | 'typeEndResult';
 
 	currentUser.subscribe(async (value) => {
 		if (value.state === 'loggedIn') {
@@ -39,7 +39,7 @@
 	}
 
 	function onStart() {
-		started = true;
+		currentScreen = mode === 'flipCards' ? 'flips' : 'type';
 		const copiedPhrases = [...allPhrases];
 		for (let i = 0; i < numberOfWords; i++) {
 			const randomIndex = Math.floor(Math.random() * copiedPhrases.length);
@@ -53,10 +53,9 @@
 	}
 
 	function onGoToNextWord() {
-		flipped = false;
 		if (currentLearnPhraseIndex === learnPhrases.length - 1) {
 			currentLearnPhraseIndex = 0;
-			started = false;
+			currentScreen = 'start';
 		} else {
 			currentLearnPhraseIndex++;
 		}
@@ -73,24 +72,28 @@
 		} else {
 			wrongAnswers++;
 		}
-		showStepResult = true;
+		currentScreen = 'typePhraseResult'
 	}
 
 	function onTypeNextWord() {
-		showStepResult = false;
 		translation = '';
 		if (currentLearnPhraseIndex === learnPhrases.length - 1) {
 			currentLearnPhraseIndex = 0;
-			started = false;
+			currentScreen = 'typeEndResult';
 		} else {
 			currentLearnPhraseIndex++;
 			translationInput?.focus();
+			currentScreen = 'type';
 		}
+	}
+
+	function onResultScreenShown() {
+		currentScreen = 'start';
 	}
 </script>
 
 <div class="learn-content">
-	{#if !started}
+	{#if currentScreen === 'start'}
 		<div class="learn-config">
 			<label for="number-of-words">Anzahl der Wörter:</label>
 			<input
@@ -112,7 +115,7 @@
 			</select>
 			<button class="start-button" on:click={onStart}>Los geht's!</button>
 		</div>
-	{:else if mode === 'flipCards'}
+	{:else if currentScreen === 'flips'}
 		<div class="flip-card">
 			<button class="current-word" class:flipped on:click={() => (flipped = !flipped)}>
 				{#if (direction === 'primaryToSecondary' && !flipped) || (direction === 'secondaryToPrimary' && flipped)}
@@ -125,7 +128,7 @@
 				>{currentLearnPhraseIndex === learnPhrases.length - 1 ? 'Abschließen' : 'Weiter'}</button
 			>
 		</div>
-	{:else if showStepResult === false}
+	{:else if currentScreen === 'type'}
 		<div class="phrase-input">
 			<div class="original-phrase">
 				<div class="label">Übersetze:</div>
@@ -147,10 +150,22 @@
 				>
 			</form>
 		</div>
-	{:else}
+	{:else if currentScreen === 'typePhraseResult'}
 		<div class="step-result">
 			{#if translation === (direction === 'primaryToSecondary' ? learnPhrases[currentLearnPhraseIndex].secondary : learnPhrases[currentLearnPhraseIndex].primary)}
 				<div class="correct-answer">Richtig! 👌</div>
+			{:else if areAlike(translation, direction === 'primaryToSecondary' ? learnPhrases[currentLearnPhraseIndex].secondary : learnPhrases[currentLearnPhraseIndex].primary)}
+				<div class="half-answer">Fast... 😣</div>
+				<div class="answer-details">
+					<div class="label">Richtig:</div>
+					<div class="correct-phrase">
+						{direction === 'primaryToSecondary'
+							? learnPhrases[currentLearnPhraseIndex].secondary
+							: learnPhrases[currentLearnPhraseIndex].primary}
+					</div>
+					<div class="label">Deine Übersetzung:</div>
+					<div class="your-translation">{translation}</div>
+				</div>
 			{:else}
 				<div class="wrong-answer">Falsch. 😒</div>
 				<div class="answer-details">
@@ -168,6 +183,12 @@
 			<button class="next-word" on:click={onTypeNextWord}
 				>{currentLearnPhraseIndex === learnPhrases.length - 1 ? 'Abschließen' : 'Weiter'}</button
 			>
+		</div>
+	{:else if currentScreen === 'typeEndResult'}
+		<div class="total-result">
+			<div class="answer-info">Richtig: <span class="count">{correctAnswers}</span></div>
+			<div class="answer-info">Falsch: <span class="count">{wrongAnswers}</span></div>
+			<button class="next-word" on:click={onResultScreenShown}>Zurück</button>
 		</div>
 	{/if}
 </div>
@@ -266,17 +287,18 @@
 			font-style: italic;
 		}
 
-        .answer-details {
-            display: flex;
-            flex-direction: column;
-            align-items: start;
-            justify-content: center;
-            gap: 0.5rem;
-            width: 85%;
-        }
+		.answer-details {
+			display: flex;
+			flex-direction: column;
+			align-items: start;
+			justify-content: center;
+			gap: 0.5rem;
+			width: 85%;
+		}
 
 		.correct-answer,
-		.wrong-answer {
+		.wrong-answer,
+		.half-answer {
 			background-color: #afa;
 			font-size: 3rem;
 			margin-bottom: 1rem;
@@ -288,6 +310,10 @@
 
 		.wrong-answer {
 			background-color: #faa;
+		}
+
+		.half-answer {
+			background-color: #ffa;
 		}
 
 		.correct-phrase,
@@ -303,5 +329,27 @@
 		button.next-word {
 			margin-top: 1.5rem;
 		}
+	}
+
+	.total-result {
+		display: flex;
+		flex-direction: column;
+		padding: 1rem;
+		
+		.answer-info {
+			font-size: 2rem;
+			font-weight: 300;
+			margin-bottom: 1rem;
+
+			.count {
+				font-weight: 700;
+			}
+		}
+
+		button {
+				margin-top: 1.5rem;
+				width: 100%;
+				font-size: 2rem;
+		}		
 	}
 </style>

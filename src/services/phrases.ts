@@ -16,8 +16,6 @@ export async function getPhrases(includeInactive = false): Promise<Phrase[]> {
     const user = fromStore(currentUser);
     const userId = user.current.user?.uid;
     const currentLanguage = fromStore(language);
-    console.error('currentLanguage', currentLanguage.current);
-    console.error('userId', userId);
     const phrasesQuery = includeInactive ? query(phrasesRef,
         where('userId', '==', userId),
         where('primaryLanguageId', '==', currentLanguage.current.primary),
